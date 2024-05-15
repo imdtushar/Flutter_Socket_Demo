@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+
 name: "Build & Release"
 jobs:
   build:
@@ -21,21 +22,42 @@ jobs:
           channel: 'stable'
           architecture: x64
 
+      # Decrypt and install the provisioning profile
+      - name: Decrypt Provisioning Profile
+        run: echo "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > build/ios/app.mobileprovision
+
+      # Decrypt and install the certificate
+      - name: Decrypt Certificate
+        run: echo "${{ secrets.CERTIFICATE_BASE64 }}" | base64 --decode > build/ios/dist.p12
+
+      - name: Install Certificate
+        run: |
+          security create-keychain -p "" build.keychain
+          security import build/ios/dist.p12 -t agg -k ~/Library/Keychains/build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -A
+          security list-keychains -s ~/Library/Keychains/build.keychain
+          security default-keychain -s ~/Library/Keychains/build.keychain
+          security unlock-keychain -p "" ~/Library/Keychains/build.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" ~/Library/Keychains/build.keychain
+
       - run: flutter build apk --release --split-per-abi
-      - run: |
-          flutter build ios --no-codesign
+      - run: flutter build ios --release --no-codesign
+
+      - name: Sign .ipa file
+        run: |
           cd build/ios/iphoneos
           mkdir Payload
+          mv Runner.app Payload/
           cd Payload
-          ln -s ../Runner.app
-          cd ..
           zip -r app.ipa Payload
+          xcrun -sdk iphoneos PackageApplication -v Payload/Runner.app -o ../app.ipa --sign "Apple Distribution: YourCompany (XXXXXXXXXX)" --embed ../../../build/ios/app.mobileprovision
+
       - name: Push to Releases
         uses: ncipollo/release-action@v1
         with:
           artifacts: "build/app/outputs/apk/release/*,build/ios/iphoneos/app.ipa"
           tag: v1.0.${{ github.run_number }}
           token: ${{ secrets.TOKEN }}
+
 
 # push to master, main, develop
 # pull request on main master
