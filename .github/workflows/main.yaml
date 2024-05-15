@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - master
-
 name: "Build & Release"
 jobs:
   build:
@@ -22,53 +21,21 @@ jobs:
           channel: 'stable'
           architecture: x64
 
-      # Ensure directories exist
-      - name: Create necessary directories
-        run: mkdir -p build/ios
-
-      # Decrypt and install the provisioning profile
-      - name: Decrypt Provisioning Profile
-        run: echo "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > build/ios/app.mobileprovision
-
-      # Decrypt and install the certificate
-      - name: Decrypt Certificate
-        run: echo "${{ secrets.CERTIFICATE_BASE64 }}" | base64 --decode > build/ios/dist.p12
-
-      - name: Install Certificate
-        run: |
-          security create-keychain -p "" build.keychain
-          security import build/ios/dist.p12 -t agg -k ~/Library/Keychains/build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -A
-          security list-keychains -s ~/Library/Keychains/build.keychain
-          security default-keychain -s ~/Library/Keychains/build.keychain
-          security unlock-keychain -p "" ~/Library/Keychains/build.keychain
-          security set-key-partition-list -S apple-tool:,apple: -s -k "" ~/Library/Keychains/build.keychain
-
-      # Build APK
       - run: flutter build apk --release --split-per-abi
-
-      # Build IPA
-      - run: flutter build ios --release --no-codesign
-
-      # Create IPA file
-      - name: Create .ipa file
-        run: |
+      - run: |
+          flutter build ios --no-codesign
           cd build/ios/iphoneos
           mkdir Payload
-          mv Runner.app Payload/
           cd Payload
-          zip -r ../app.ipa Payload
-
-      # Sign IPA file
-      - name: Sign .ipa file
-        run: |
-          xcrun -sdk iphoneos PackageApplication -v build/ios/iphoneos/Payload/Runner.app -o build/ios/iphoneos/app-signed.ipa --sign "Apple Distribution: YourCompany (XXXXXXXXXX)" --embed build/ios/app.mobileprovision
-
-      # Push to Releases
+          ln -s ../Runner.app
+          cd ..
+          zip -r app.ipa Payload
       - name: Push to Releases
         uses: ncipollo/release-action@v1
         with:
-          artifacts: |
-            build/app/outputs/apk/release/*.apk,
-            build/ios/iphoneos/app-signed.ipa
+          artifacts: "build/app/outputs/apk/release/*,build/ios/iphoneos/app.ipa"
           tag: v1.0.${{ github.run_number }}
           token: ${{ secrets.TOKEN }}
+
+# push to master, main, develop
+# pull request on main master
